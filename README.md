@@ -1,2 +1,2 @@
 # macroalgae-index
-Calculating macroalgae indices
+Calculating macroalgae indices and EQR values
