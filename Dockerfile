@@ -24,4 +24,4 @@ RUN rm -rf /tmp/*
 COPY /app /martini
 
 USER shiny
-CMD ["R", "-e", "shiny::runApp('/martini', host = '0.0.0.0', port = 3838)"]
+CMD ["R", "-e", "shiny::runApp('/macroalgae', host = '0.0.0.0', port = 3838)"]
