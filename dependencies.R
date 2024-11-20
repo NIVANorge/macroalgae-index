@@ -1,6 +1,7 @@
 packages <- c(
   
   'dplyr',
+  'readxl',
   'shiny',
   'leaflet',
   'shinyjs',
