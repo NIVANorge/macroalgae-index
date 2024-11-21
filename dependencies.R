@@ -12,6 +12,7 @@ packages <- c(
   'wesanderson',
   'purrr',
   'bslib',
+  'bsicons',
   
   '')
 options(Ncpus = -1)
