@@ -1,7 +1,6 @@
 library(shiny)
 library(bslib)
-
-# Strandobservasjon
+library(bsicons)
 
 page_navbar( 
   title = "Macroalgae index calculations", 
