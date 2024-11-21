@@ -21,7 +21,7 @@ RUN R --slave --no-restore -e 'source("dependencies.R")'
 
 RUN rm -rf /tmp/*
 
-COPY /app /martini
+COPY /app /macroalgae
 
 USER shiny
 CMD ["R", "-e", "shiny::runApp('/macroalgae', host = '0.0.0.0', port = 3838)"]
