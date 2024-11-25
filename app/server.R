@@ -6,10 +6,11 @@ library(purrr)
 library(reactable)
 library(htmltools)
 
-source("options.R")
 source("functions.R")
 
 function(input, output, session) {
+  
+  options <- get_options()
   
   xl_sheets <- reactive({
     file <- input$file1
@@ -208,33 +209,16 @@ function(input, output, session) {
     }    
   })
   
+  
   stn_points <- reactive({
     req(stations_ok())
     req(stations())
     selected <- getReactableState("stations", "selected")
-    
-    if(is.null(selected)){
-      return(NULL)
-    }else{
 
-      df <- stations()
-      df <- df[selected,] 
-      df <- df %>%
-        select(turbid_water, sand_scouring, ice_scouring, 
-               ravine, fractured, boulders, 
-               steep, unspec_hard, rocks, shingle, 
-               shallow_pool, large_pool, deep_pool, 
-               small_pool, cave, overhang,
-               other_sub, 
-               points_adjust)
-      df <- df %>%
-        pivot_longer(cols=1:ncol(df), names_to = "Parameter", values_to="Points")
-      
-      df <- df %>%
-        add_param_names(options)
-      return(df)
-    }
+    df <- station_points( stations(), selected, options)
+  
   })
+  
   
   output$points_table <- renderReactable({
     req(stations_ok())
@@ -276,42 +260,15 @@ function(input, output, session) {
     paste0("selected: ", input$stations_rows_selected)
   })
   
+  
   obs_data <- reactive({
     
     req(stations_ok())
     req(stations())
-
+    
+    df <- species_data(xl_data(), stations(), options)
   
-    dfstns <- stations()
-    df <- xl_data()
-    
-    if(!is.null(df)){
-      
-    col1 <- df[,1] %>% 
-      unlist()
-    
-    col_stn_first <- min(dfstns$col)
-    col_max <- max(dfstns$col)
-    
-    
-    row_match <- match(options$species_header, col1)
-    row_head <- df[row_match,] %>% 
-      unlist()
-    df <- df[(row_match+1):nrow(df),1:col_max]
-    
-    col_names <- row_head[1:(col_stn_first-1)]
-    col_names <- c(col_names, dfstns$stn_code)
-    
-    names(df) <- col_names
-    
-    df <- df %>%
-      mutate(across(all_of(dfstns$stn_code), as.numeric))
-    
     return(df)
-    }else{
-      return(NULL)
-    }
-    
   })
   
   output$observations <-renderReactable({

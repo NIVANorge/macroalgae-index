@@ -1,14 +1,140 @@
 
 
+# ------------ species_interpreter() -------------------
+
+.genus_chars <- function(){
+  #' I have seen several versions for 'spp'
+  #' - some of them probably typos
+  #' if it occurs once in a list of names, we 
+  #' assume that all names are at genus level 
+  c("spp\\.", "ssp\\.", "sp\\.")
+}
+
+.species_split <- function(species_definition){
+  
+  genus_level <- lapply(.genus_chars(), stringr::str_detect, string=s) %>%
+    unlist() %>%
+    max(na.rm=T)
+  
+  s <- stringr::str_split_1(species_definition, "/")
+  s <- stringr::str_remove_all(s, "spp\\.")
+  s <- stringr::str_remove_all(s, "ssp\\.")
+  s <- stringr::str_remove_all(s, "sp\\.")
+  s <- stringr::str_trim(s)
+  if(genus_level){
+    s <- paste0(s, " spp.")
+  }
+  return(s)
+}
+
+
+.is_species_single <- function(name){
+  # check for a space in the name surrounded by characters
+  # if there is a "/" character then NA is returned
+  # the names should be split before checking if they are species
+  for(s in .genus_chars()){
+    name <- name %>%
+      stringr::str_remove_all(s) %>%
+      stringr::str_trim()
+  }
+  
+  is_species <- stringr::str_detect(name, "[:alpha:]+ [:alpha:]+")
+  is_species <- ifelse(stringr::str_detect(name, "/"), NA_character_, is_species)
+  return(is_species)
+}
+
+is_species <- function(name){
+  is_species <- lapply(name, is_species_single) %>% 
+    unlist()
+  return(is_species)
+}
 
 
 
-add_param_names <- function(df, options){
+# -------------- stn_points() -------------------------
+
+station_points <- function(df, selected, options){
+  
+  if(is.null(selected)){
+    return(NULL)
+  }else{
+    
+    df <- df[selected,] 
+    df <- df %>%
+      select(turbid_water, sand_scouring, ice_scouring, 
+             ravine, fractured, boulders, 
+             steep, unspec_hard, rocks, shingle, 
+             shallow_pool, large_pool, deep_pool, 
+             small_pool, cave, overhang,
+             other_sub, 
+             points_adjust)
+    
+    df <- df %>%
+      pivot_longer(cols=1:ncol(df), names_to = "Parameter", values_to="Points")
+    
+    df <- df %>%
+      .add_param_names(options)
+    return(df)
+  }
+  
+}
+
+# -------------- species_data() -------------------------
+
+species_data <- function(df, dfstns, options){
+  
+  if(!is.null(df)){
+    
+    col1 <- df[,1] %>% 
+      unlist()
+    
+    col_stn_first <- min(dfstns$col)
+    col_max <- max(dfstns$col)
+    
+    
+    row_match <- match(options$species_header, col1)
+    row_head <- df[row_match,] %>% 
+      unlist()
+    
+    df <- df[(row_match+1):nrow(df),1:col_max]
+    
+    col_names <- row_head[1:(col_stn_first-1)]
+    col_names <- c(col_names, dfstns$stn_code)
+    
+    names(df) <- col_names
+    
+    df <- df %>%
+      mutate(across(all_of(dfstns$stn_code), as.numeric))
+    
+    return(df)
+  }else{
+    return(NULL)
+  }
+  
+}
+
+
+# -------------- fjaerepotensial() -------------------------
+
+fjaerepotensial <- function(poeng){
+  # Felt- og beregningsmetodikk for komboindeksen (Makroalger) 28.11.2017
+  poeng_sum <- 5:20
+  f <- c(1.72, 1.65, 1.58, 1.51, 1.44, 1.36,
+         1.29, 1.21, 1.14, 1.07, 1, 0.93,
+         0.87, 0.8, 0.74, 0.69)
+  ix <- length(poeng_sum[poeng_sum <= round(poeng,0)])
+  ix <- max(ix,1)
+  return(f[ix])
+}
+
+# -------------- add_param_names() -------------------------
+
+.add_param_names <- function(df, options){
   
   df <- df %>%
     rowwise() %>%
-    mutate(group=parameter_group(Parameter, options)) %>%
-    mutate(name=parameter_name(Parameter, options)) %>%
+    mutate(group=.parameter_group(Parameter, options)) %>%
+    mutate(name=.parameter_name(Parameter, options)) %>%
     ungroup() %>%
     relocate(name, .before=1) %>%
     relocate(group, .before=1)
@@ -16,8 +142,11 @@ add_param_names <- function(df, options){
   return(df)
 }
 
-parameter_group <- function(Parameter, options){
-  #browser()
+
+# -------------- parameter_group() -------------------------
+
+.parameter_group <- function(Parameter, options){
+  
   grps <- names(options)
   val <- NA_character_
   if(Parameter == "points_adjust"){
@@ -42,7 +171,10 @@ parameter_group <- function(Parameter, options){
   return(val)
 }
 
-parameter_name <- function(Parameter, options){
+
+# -------------- parameter_name() -------------------------
+
+.parameter_name <- function(Parameter, options){
   #browser()
   grps <- names(options)
   val <- NA_character_
@@ -64,6 +196,7 @@ parameter_name <- function(Parameter, options){
 }
 
 
+# -------------- observation_info() -------------------------
 
 observation_info <- function(df, options, 
                              opts=c("species_header","points_adjust")){
@@ -71,7 +204,7 @@ observation_info <- function(df, options,
   df_stns <- data.frame()
   grps <- names(options)[!names(options) %in% opts]
   for(grpi in grps){
-    dfi <- observation_info_grp(df, options, grpi)
+    dfi <- .observation_info_grp(df, options, grpi)
     if(nrow(df_stns)>0){
       df_stns <- df_stns %>%
         left_join(dfi, by="col")
@@ -89,7 +222,7 @@ observation_info <- function(df, options,
   ncol2 <- ncol(df_stns)
   
   df_stns <- df_stns %>%
-    mutate(points = rowSums(across(ncol1:ncol2), na.rm=T ))
+    mutate(points = rowSums(across(any_of(ncol1:ncol2)), na.rm=T ))
   
   df_stns <- df_stns %>%
     rowwise() %>%
@@ -100,8 +233,9 @@ observation_info <- function(df, options,
 }
 
 
+# -------------- observation_info_grp() -------------------------
 
-observation_info_grp <- function(df, options, info_group){
+.observation_info_grp <- function(df, options, info_group){
 
   sub_options <- options[[info_group]]
   
@@ -134,7 +268,7 @@ observation_info_grp <- function(df, options, info_group){
     #irow <- row_ix[match(info_rows[i],row_names)]
     irow <- match(info_rows[i],row_names)
     assign(info_rows_ix[i], irow)
-    dfi <- stn_param_values(irow, df, name=info_names[i], points=info_points[[i]])
+    dfi <- .stn_param_values(irow, df, name=info_names[i], points=info_points[[i]])
     
     if(nrow(dfobs)>0){
       dfobs <- dfobs  %>%
@@ -155,7 +289,10 @@ observation_info_grp <- function(df, options, info_group){
   return(dfobs)
 }
 
-stn_type_points <- function(recorded, points=c(0)){
+
+# -------------- stn_type_points() -------------------------
+
+.stn_type_points <- function(recorded, points=c(0)){
   recorded <- as.numeric(recorded)
   recorded <- ifelse(is.na(recorded),0,recorded)
   recorded <- ifelse(recorded>0,1,recorded)
@@ -166,7 +303,9 @@ stn_type_points <- function(recorded, points=c(0)){
 }
 
 
-stn_param_values <- function(row_ix, df, name="value", type="character", points=NULL, first_col=3){
+# -------------- stn_param_values() -------------------------
+
+.stn_param_values <- function(row_ix, df, name="value", type="character", points=NULL, first_col=3){
   
   type <- ifelse(stringr::str_detect(name, "date"), "date", type)
   type <- ifelse(stringr::str_detect(name, "time"), "time", type)
@@ -193,7 +332,7 @@ stn_param_values <- function(row_ix, df, name="value", type="character", points=
   }else if(type=="points"){
     res <- res %>%
       rowwise() %>%
-      mutate(value=stn_type_points(value, points)) %>%
+      mutate(value=.stn_type_points(value, points)) %>%
       ungroup()
     
   }
@@ -202,6 +341,7 @@ stn_param_values <- function(row_ix, df, name="value", type="character", points=
   return(res)
 }
 
+# -------------- read_excel_sheet() -------------------
 
 
 read_excel_sheet <- function(sheet, xl_path){
@@ -209,6 +349,8 @@ read_excel_sheet <- function(sheet, xl_path){
   df <- readxl::read_excel(sheet=sheet, path=xl_path, col_names=F, col_types = "text")
   return(df)
 }
+
+# -------------- read_excel_all() -------------------
 
 read_excel_all <- function(xl_path, progress=NULL){
   require(readxl)
@@ -228,14 +370,20 @@ read_excel_all <- function(xl_path, progress=NULL){
   return(list_df)
 }
 
+
+# -------------- default_sheet() -------------------
+
 default_sheet <- function(){
   return("Strandobservasjon")
 } 
 
+# -------------- defaults() -------------------------
 
 defaults <-function(){
   read.table("defaults.csv",sep=";",header=T)
 }
+
+# -------------- .options_list() -------------------------
 
 .options_list <- function(row_name_project = NA_character_,
                     row_name_stn_code = NA_character_,
@@ -369,76 +517,78 @@ defaults <-function(){
     )
 }
 
-options <- .options_list(row_name_project   = row_name_project,
-                         row_name_stn_code  = row_name_stn_code,
-                         row_name_old_code  = row_name_old_code,
-                         row_name_stn_name  = row_name_stn_name,
-                         row_name_date      = row_name_date,
-                         row_name_observer  = row_name_observer,
-                         row_name_recorder  = row_name_recorder,
-                         row_name_coord_type = row_name_coord_type,
-                         row_name_long      = row_name_long,
-                         row_name_lat       = row_name_lat,
-                         row_name_water_level = row_name_water_level,
-                         row_name_time_low  = row_name_time_low,
-                         
-                         # species recorded section
-                         row_name_species_header = row_name_species_header,
-                         points_adjust = points_adjust_NO,
-                         
-                         # shore description 
-                         row_name_shore_desc     = row_name_shore_desc,     
-                         row_name_turbid_water   = row_name_turbid_water,   
-                         row_name_sand_scouring  = row_name_sand_scouring,  
-                         row_name_ice_scouring   = row_name_ice_scouring,   
-                         points_turbid_water     = points_turbid_water,
-                         points_sand_scouring    = points_sand_scouring,
-                         points_ice_scouring     = points_ice_scouring,
-                         
-                         # dominant shore type= # dominant shore type
-                         row_name_dominant_shore = row_name_dominant_shore, 
-                         row_name_ravine         = row_name_ravine,         
-                         row_name_fractured      = row_name_fractured,      
-                         row_name_boulders       = row_name_boulders,       
-                         row_name_steep          = row_name_steep,          
-                         row_name_unspec_hard    = row_name_unspec_hard,    
-                         row_name_rocks          = row_name_rocks,          
-                         row_name_shingle        = row_name_shingle,   
-                         points_ravine           = points_ravine,
-                         points_fractured        = points_fractured,
-                         points_boulders         = points_boulders,
-                         points_steep            = points_steep,
-                         points_unspec_hard      = points_unspec_hard, 
-                         points_rocks            = points_rocks,
-                         points_shingle          = points_shingle,
-
-                         # dominant shore types= # dominant shore types
-                         row_name_other_shore    = row_name_other_shore,    
-                         row_name_shallow_pool   = row_name_shallow_pool,   
-                         row_name_large_pool     = row_name_large_pool,     
-                         row_name_deep_pool      = row_name_deep_pool,      
-                         row_name_small_pool     = row_name_small_pool,     
-                         row_name_cave           = row_name_cave,           
-                         row_name_overhang       = row_name_overhang,       
-                         row_name_other_sub      = row_name_other_sub,
-                         points_shallow_pool     = points_shallow_pool,
-                         points_large_pool       = points_large_pool,
-                         points_deep_pool        = points_deep_pool,
-                         points_small_pool       = points_small_pool,
-                         points_cave             = points_cave,
-                         points_overhang         = points_overhang,
-                         points_other_sub        = points_other_sub
- 
-)
 
 
-fjaerepotensial <- function(poeng){
-  # Felt- og beregningsmetodikk for komboindeksen (Makroalger) 28.11.2017
-  poeng_sum <- 5:20
-  f <- c(1.72, 1.65, 1.58, 1.51, 1.44, 1.36,
-              1.29, 1.21, 1.14, 1.07, 1, 0.93,
-              0.87, 0.8, 0.74, 0.69)
-  ix <- length(poeng_sum[poeng_sum <= round(poeng,0)])
-  ix <- max(ix,1)
-  return(f[ix])
+#' ----------------- define options variables --------------
+#' call .options_list() using the values defined in options.R
+#' 
+#' 
+get_options <- function(options_file="options.R"){
+   
+  source(options_file) 
+  
+  options <- .options_list(row_name_project   = .row_name_project,
+                           row_name_stn_code  = .row_name_stn_code,
+                           row_name_old_code  = .row_name_old_code,
+                           row_name_stn_name  = .row_name_stn_name,
+                           row_name_date      = .row_name_date,
+                           row_name_observer  = .row_name_observer,
+                           row_name_recorder  = .row_name_recorder,
+                           row_name_coord_type = .row_name_coord_type,
+                           row_name_long      = .row_name_long,
+                           row_name_lat       = .row_name_lat,
+                           row_name_water_level = .row_name_water_level,
+                           row_name_time_low  = .row_name_time_low,
+                           
+                           # species recorded section
+                           row_name_species_header = .row_name_species_header,
+                           points_adjust = .points_adjust_NO,
+                           
+                           # shore description 
+                           row_name_shore_desc     = .row_name_shore_desc,     
+                           row_name_turbid_water   = .row_name_turbid_water,   
+                           row_name_sand_scouring  = .row_name_sand_scouring,  
+                           row_name_ice_scouring   = .row_name_ice_scouring,   
+                           points_turbid_water     = .points_turbid_water,
+                           points_sand_scouring    = .points_sand_scouring,
+                           points_ice_scouring     = .points_ice_scouring,
+                           
+                           # dominant shore type
+                           row_name_dominant_shore = .row_name_dominant_shore, 
+                           row_name_ravine         = .row_name_ravine,         
+                           row_name_fractured      = .row_name_fractured,      
+                           row_name_boulders       = .row_name_boulders,       
+                           row_name_steep          = .row_name_steep,          
+                           row_name_unspec_hard    = .row_name_unspec_hard,    
+                           row_name_rocks          = .row_name_rocks,          
+                           row_name_shingle        = .row_name_shingle,   
+                           points_ravine           = .points_ravine,
+                           points_fractured        = .points_fractured,
+                           points_boulders         = .points_boulders,
+                           points_steep            = .points_steep,
+                           points_unspec_hard      = .points_unspec_hard, 
+                           points_rocks            = .points_rocks,
+                           points_shingle          = .points_shingle,
+  
+                           # other shore types
+                           row_name_other_shore    = .row_name_other_shore,    
+                           row_name_shallow_pool   = .row_name_shallow_pool,   
+                           row_name_large_pool     = .row_name_large_pool,     
+                           row_name_deep_pool      = .row_name_deep_pool,      
+                           row_name_small_pool     = .row_name_small_pool,     
+                           row_name_cave           = .row_name_cave,           
+                           row_name_overhang       = .row_name_overhang,       
+                           row_name_other_sub      = .row_name_other_sub,
+                           points_shallow_pool     = .points_shallow_pool,
+                           points_large_pool       = .points_large_pool,
+                           points_deep_pool        = .points_deep_pool,
+                           points_small_pool       = .points_small_pool,
+                           points_cave             = .points_cave,
+                           points_overhang         = .points_overhang,
+                           points_other_sub        = .points_other_sub
+   
+  )
+
+return(options)
 }
+
