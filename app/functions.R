@@ -185,7 +185,7 @@ stn_param_values <- function(row_ix, df, name="value", type="character", points=
   }else if(type=="points"){
     res <- res %>%
       rowwise() %>%
-      mutate(value=stn_type_value(value, points)) %>%
+      mutate(value=stn_type_points(value, points)) %>%
       ungroup()
     
   }
