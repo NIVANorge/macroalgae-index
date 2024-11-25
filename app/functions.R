@@ -85,8 +85,7 @@ observation_info <- function(df, options,
   ncol2 <- ncol(df_stns)
   
   df_stns <- df_stns %>%
-    mutate(points = rowSums(across(ncol1:ncol2), na.rm=T )) %>%
-    mutate(points = points + points_adjust)
+    mutate(points = rowSums(across(ncol1:ncol2), na.rm=T ))
     
   return(df_stns)
 }
