@@ -14,7 +14,7 @@ packages <- c(
   'purrr',
   'bslib',
   'bsicons',
-  
+  'htmltools',
   '')
 options(Ncpus = -1)
 for (pkg in packages) {
