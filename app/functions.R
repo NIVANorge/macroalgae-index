@@ -1,17 +1,5 @@
 
 add_param_names <- function(df, options){
-  # #sum_shore_desc,
-  # turbid_water, sand_scouring, ice_scouring, 
-  
-  # #sum_dominant_type, 
-  # ravine, fractured, boulders, 
-  # steep, unspec_hard, rocks, shingle, 
-  
-  # #sum_other_type, 
-  # shallow_pool, large_pool, deep_pool, 
-  # small_pool, cave, overhang,
-  # other_sub, 
-  # points_adjust, points
   
   df <- df %>%
     rowwise() %>%
