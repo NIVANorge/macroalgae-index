@@ -16,13 +16,13 @@ function(input, output, session) {
     ext <- tools::file_ext(file$datapath)
     
     req(file)
-    validate(need(ext %in% c("xlsx","xlsm","xls"), "Please upload an Excel file"))
+    validate(need(ext %in% c("xlsx","xlsm","xls"), "Please select an Excel file to read"))
     
     progress <- Progress$new(session, min=1, max=10)
     on.exit(progress$close())
     
     progress$set(message = 'Reading Excel data',
-                 detail = 'This may take a while...')
+                 detail = "shouldn't take long...")
     
     list_df <- read_excel_all(file$datapath, progress)
         
@@ -91,8 +91,8 @@ function(input, output, session) {
     
     if(length(row_names)<length(check_rows)){
       ok = FALSE
-      msg <- paste0("The sheet <b><i>", input$selectSheet, 
-                    "</b></i> does not appear to be a macroalgae observation sheet. Please check your input selection")
+      msg <- paste0(input$selectSheet, 
+                    ": does not appear to be a macroalgae observation sheet. Check your input selection")
     }else{
       ok = TRUE
       msg <- "Station data OK"
@@ -174,7 +174,7 @@ function(input, output, session) {
       reactable(df,
                 selection = "single", 
                 onClick = "select",
-                style = list(fontSize = "0.875rem"),
+                style = list(fontSize = "0.8rem"),
                 columns = list(
                   col = colDef(show=F),
                   project = colDef(show=T, name = options$station$project$row_name, width = 100),
@@ -245,7 +245,7 @@ function(input, output, session) {
     }else{
       reactable(df,
                 sortable = F,
-                style = list(fontSize = "0.875rem"),
+                style = list(fontSize = "0.8rem"),
                 columns = list(
                   Parameter = colDef(show=F),
                   group = colDef(show=T, name="Gruppe"),
@@ -326,19 +326,23 @@ function(input, output, session) {
                 sortable = F,
                 style = list(fontSize = "0.8rem"),
                 columns = list(
-                  Navn = colDef(width = 200)
+                  Kode = colDef(width = 60),
+                  CF = colDef(width = 30),
+                  SP = colDef(width = 30),
+                  NB = colDef(width = 30),
+                  Navn = colDef(width = 300)
                 ), # columns
-                defaultColDef = colDef(minWidth = 60, show=T, vAlign = "bottom"),
+                defaultColDef = colDef(minWidth = 55, show=T, vAlign = "bottom"),
                 compact = TRUE,
                 wrap = FALSE,
                 fullWidth = FALSE,
                 resizable = TRUE,
                 bordered = TRUE,
-                defaultPageSize = 100,
+                defaultPageSize = 999,
                 highlight = TRUE,
                 theme = reactableTheme(
                   headerStyle = list(background = "#f7f7f8"),
-                  cellPadding = "3px 3px"
+                  cellPadding = "1px 1px"
                 ))
     }
   })
