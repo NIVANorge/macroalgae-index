@@ -27,7 +27,7 @@ page_navbar(
                         layout_columns(
                           reactableOutput("stations"),
                           reactableOutput("points_table"),
-                          col_widths = c(8,4)),
+                          col_widths = c(7,5)),
                         uiOutput("station_warning"),
                       ),  
                       accordion_panel(
