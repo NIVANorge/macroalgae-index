@@ -15,6 +15,7 @@ packages <- c(
   'bslib',
   'bsicons',
   'htmltools',
+  'openxlsx',
   '')
 options(Ncpus = -1)
 for (pkg in packages) {
