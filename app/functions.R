@@ -1,4 +1,8 @@
 
+
+
+
+
 add_param_names <- function(df, options){
   
   df <- df %>%
@@ -86,6 +90,11 @@ observation_info <- function(df, options,
   
   df_stns <- df_stns %>%
     mutate(points = rowSums(across(ncol1:ncol2), na.rm=T ))
+  
+  df_stns <- df_stns %>%
+    rowwise() %>%
+    mutate(f = fjaerepotensial(points)) %>%
+    ungroup()
     
   return(df_stns)
 }
@@ -422,3 +431,14 @@ options <- .options_list(row_name_project   = row_name_project,
  
 )
 
+
+fjaerepotensial <- function(poeng){
+  # Felt- og beregningsmetodikk for komboindeksen (Makroalger) 28.11.2017
+  poeng_sum <- 5:20
+  f <- c(1.72, 1.65, 1.58, 1.51, 1.44, 1.36,
+              1.29, 1.21, 1.14, 1.07, 1, 0.93,
+              0.87, 0.8, 0.74, 0.69)
+  ix <- length(poeng_sum[poeng_sum <= round(poeng,0)])
+  ix <- max(ix,1)
+  return(f[ix])
+}

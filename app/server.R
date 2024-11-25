@@ -172,6 +172,7 @@ function(input, output, session) {
     }
     
       reactable(df,
+                sortable = F,
                 selection = "single", 
                 onClick = "select",
                 style = list(fontSize = "0.8rem"),
@@ -181,9 +182,10 @@ function(input, output, session) {
                   stn_code = colDef(show=T, name = options$station$stn_code$row_name, width = 100),
                   old_code = colDef(show=F, name = options$station$old_code$row_name),
                   stn_name = colDef(show=T, name = options$station$stn_name$row_name),
-                  date = colDef(show=T, name = options$station$date$row_name, width = 200),
-                  observer = colDef(show=T, name = options$station$observer$row_name),
-                  points = colDef(show = T, name ="Sum poeng", width = 100),
+                  date = colDef(show=T, name = options$station$date$row_name, width = 160),
+                  observer = colDef(show=T, name = options$station$observer$row_name, width = 120),
+                  points = colDef(show = T, name ="Poeng", width = 70),
+                  f = colDef(show = T, name ="F", width = 50),
                   .selection = colDef(show=T)
                   
                 ), # columns
@@ -197,7 +199,8 @@ function(input, output, session) {
                 highlight = TRUE,
                 theme = reactableTheme(
                   headerStyle = list(background = "#f7f7f8"),
-                  rowSelectedStyle=list(backgroundColor = "#c0d6e4", color = "#000")
+                  rowSelectedStyle=list(backgroundColor = "#c0d6e4", color = "#000"),
+                  cellPadding = "3px 1px"
                 )
       ) # reactable
     }else{
@@ -250,9 +253,9 @@ function(input, output, session) {
                   Parameter = colDef(show=F),
                   group = colDef(show=T, name="Gruppe"),
                   name = colDef(show=T, name="Karakteristik",),
-                  Points = colDef(name="Poeng", show=T, aggregate = "sum")
+                  Points = colDef(name="Poeng", show=T, aggregate = "sum", width=50)
                 ), # columns
-                defaultColDef = colDef(minWidth = 150, show=F, vAlign = "bottom"),
+                defaultColDef = colDef(minWidth = 220, show=F, vAlign = "bottom"),
                 compact = TRUE,
                 wrap = FALSE,
                 fullWidth = FALSE,
@@ -263,7 +266,7 @@ function(input, output, session) {
                 groupBy = "group",
                 theme = reactableTheme(
                   headerStyle = list(background = "#f7f7f8"),
-                  cellPadding = "3px 3px"
+                  cellPadding = "3px 1px"
                 ))
     }
   })
