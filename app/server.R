@@ -12,6 +12,9 @@ source("functions.R")
 # read types for station codes
 dftype <- read.table("stn_index_type.txt", sep=";", header=T)
 
+# status class boundaries
+dfbnds <- read.table("class_boundaries.txt", sep=";", header=T)
+
 # read species lists for matching with observations
 dfgrps  <- read.table("species_lists.txt", sep=";", header=T)
 
@@ -176,6 +179,10 @@ function(input, output, session) {
   output$stations <- renderReactable({
     req(stations_ok())
     req(stations())
+    
+    #  this is to call index calculations before loading the tab
+    observe({df_indices()})
+    
     df <- stations()
     if(!is.null(df)){
           if(ncol(df)>0){
@@ -340,7 +347,8 @@ function(input, output, session) {
                    detail = "please wait...")
 
       wb<- excel_results(df_indices(),
-                          matched_obs())
+                          matched_obs(),
+                         results_eqr_tab())
       
       saveWorkbook(wb, file = file, overwrite = TRUE)
       
@@ -350,8 +358,7 @@ function(input, output, session) {
   
   matched_obs <- reactive({
     req(stations_ok())
-    #req(stations())
-    #req(obs_data())
+  
     
     progress <- Progress$new(session, min=1, max=10)
     on.exit(progress$close())
@@ -394,9 +401,7 @@ function(input, output, session) {
   output$matched_obs <-renderReactable({
     
     req(stations_ok())
-    #req(stations())
-    #req(obs_data())
-    #req(matched_obs())
+   
     
     df <- matched_obs_stn_select()
     
@@ -442,9 +447,8 @@ function(input, output, session) {
   
   
   df_indices <- reactive({
-    
     req(stations_ok())
-    
+  
     df <- obs_indices(matched_obs(), stations())
     
     return(df)
@@ -485,6 +489,7 @@ function(input, output, session) {
                   n_opp = colDef(name="Opp.", width=50),
                   pctG= colDef(name="%Gr", width=55, format = colFormat(digits = 1)),
                   pctR= colDef(name="%Rd", width=55, format = colFormat(digits = 1)),
+                  pctB= colDef(name="%Br", width=55, format = colFormat(digits = 1)),
                   n_norm = colDef(name="f.N", width=55, format = colFormat(digits = 1)),
                   ESG12 = colDef(name="ESG 1:2", width=65, format = colFormat(digits = 3)),
                   pctOpp= colDef(name="%opp", width=55, format = colFormat(digits = 1)),
@@ -507,5 +512,156 @@ function(input, output, session) {
     }
   })
   
+  output$comment_indices <- renderUI({
+    req(stations_ok())
+    df <- df_indices()
+    if(is.null(df)){
+      return(NULL) 
+    }else{
+      msg <- "All indices are calculated for all stations, even though some are not included in EQR calculations."
+      tagList(
+        div(style="font-size: 0.8rem", msg)
+      )
+    }
+      })
+  
+  results_eqr <- reactive({
+    req(stations_ok())
+    df <- df_indices()
+    if(is.null(df)){
+      return(NULL)
+    }else{
+      dfeqr <- eqr_results(df, dfbnds)
+      return(dfeqr)
+    }
+  })
+  
+  results_eqr_stn <- reactive({
+    req(stations_ok())
+    df <- results_eqr()
+    
+    if(is.null(df)){
+      return(NULL)
+    }else{
+      dfeqr <- eqr_results_mean(df)
+      return(dfeqr)
+    }
+  })
+  
+  results_eqr_tab <- reactive({
+    req(stations_ok())
+    
+    df <- results_eqr()
+    dfstn <- results_eqr_stn()
+    
+    if(is.null(dfstn)){
+      return(NULL)
+    }else{
+        dfeqr <- eqr_for_table(df, dfstn)
+        return(dfeqr)
+    }
+  })
+  
+  
+  output$tbl_eqr <-renderReactable({
+    
+    req(stations_ok())
+    
+    df <- results_eqr_tab()
+    
+    if(is.null(df)){
+      return(NULL)
+    }else{
+      df <- df %>%
+        mutate(classID=ifelse(is.na(classID),0,classID))
+      reactable(df,
+                sortable = F,
+                style = list(fontSize = "0.8rem"),
+                #width = 1100,
+                filterable = TRUE,
+                ,
+                rowStyle = JS("function(rowInfo) {
+                                          const value = rowInfo.values['calc']
+                                          if (value == 'EQR') {
+                                            return { fontWeight: 'bold' }
+                                          } 
+                                        }"),
+                
+                columns = list(
+                  index = colDef(name="Index", width=55, show=T, 
+                                 filterInput = function(values, name) {
+                                   tags$select(
+                                     # Set to undefined to clear the filter
+                                     onchange = sprintf("Reactable.setFilter('tbl_eqr', '%s', event.target.value || undefined)", name),
+                                     # "All" has an empty value to clear the filter, and is the default option
+                                     tags$option(value = "", "All"),
+                                     lapply(unique(values), tags$option),
+                                     "aria-label" = sprintf("Filter %s", name),
+                                     style = "width: 100%; height: 24px;"
+                                   )}),
+                  stn_code = colDef(name=options$station$stn_name$row_name, width=110, show=T, 
+                                    filterInput = function(values, name) {
+                                      tags$select(
+                      # Set to undefined to clear the filter
+                      onchange = sprintf("Reactable.setFilter('tbl_eqr', '%s', event.target.value || undefined)", name),
+                      # "All" has an empty value to clear the filter, and is the default option
+                      tags$option(value = "", "All"),
+                      lapply(unique(values), tags$option),
+                      "aria-label" = sprintf("Filter %s", name),
+                      style = "width: 100%; height: 24px;"
+                    )
+                  }),
+                  calc = colDef(show=F),
+                  description = colDef(name="Parameter", width=250, filterable = F),
+                  value = colDef(name="Verdi", format = colFormat(digits=1), width=60, filterable = F),
+                  eqr00 = colDef(name="0.0", format = colFormat(digits=1), width=50, filterable = F),
+                  eqr02 = colDef(name="0.2", format = colFormat(digits=1), width=50, filterable = F),
+                  eqr04 = colDef(name="0.4", format = colFormat(digits=1), width=50, filterable = F),
+                  eqr06 = colDef(name="0.6", format = colFormat(digits=1), width=50, filterable = F),
+                  eqr08 = colDef(name="0.8", format = colFormat(digits=1), width=50, filterable = F),
+                  eqr10 = colDef(name="1.0", format = colFormat(digits=1), width=50, filterable = F),
+                  EQR = colDef(format = colFormat(digits=3), width=80, filterable = F),
+                  classID = colDef(show=F),
+                  Class = colDef(name="Status", width=80, filterable = F,
+                                 style = JS("function(rowInfo) {
+                                          const value = rowInfo.values['classID']
+                                          let color
+                                          if (value < 1) {
+                                            color = '#ffffff'
+                                          } else if (value < 2) {
+                                            color = '#ff0000'
+                                          } else if (value < 3) {
+                                            color = '#ffc000'
+                                          } else if (value < 4) {
+                                            color = '#ffff00'
+                                          } else if (value < 5) {
+                                            color = '#92d050'
+                                          } else {
+                                            color = '#00b0f0'
+                                          }
+                                          return { backgroundColor: color }
+                                          }")
+                  ),
+                  note = colDef(name="Kommentar", width=180, filterable = F)
+                ), # columns
+                columnGroups = list(
+                  colGroup(name = "EQR grenser", columns = c("eqr00", "eqr02", "eqr04", "eqr06", "eqr08", "eqr10")),
+                  colGroup(name = "Beregning", columns = c("description","value")),
+                  colGroup(name = "Resultat", columns = c("EQR","Class"))
+                ),
+                defaultColDef = colDef(minWidth = 55, show=T, vAlign = "bottom"),
+                compact = TRUE,
+                wrap = FALSE,
+                fullWidth = FALSE,
+                resizable = TRUE,
+                bordered = TRUE,
+                defaultPageSize = 100,
+                highlight = TRUE,
+                theme = reactableTheme(
+                  headerStyle = list(background = "#f7f7f8"),
+                  cellPadding = "1px 1px"
+                ))
+    }
+  })
 
 }

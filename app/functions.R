@@ -1,5 +1,165 @@
 
-excel_results <- function(dfi, dfobs){
+
+.classcolors <- function(){
+  # returns a vector of the five colours used to represent status classes
+  c('#FF0000','#FFC000','#FFFF00','#92D050','#00B0F0')
+}
+
+# ---------- .eqr() function----------------- 
+
+#' calculates EQR for an indicator value: 
+#' val
+#' given values for the indicator parameter corresponding to
+#' status class boundaries: 
+#' Ref - Reference conditions (corresponds to EQR=1.0)
+#' HG - the High/Good boundary               (EQR=0.8)
+#' GM - the Good/Moderate boundary           (EQR=0.6)
+#' MP - the Moderate/Poor boundary           (EQR=0.4)
+#' PB - the Poor/Bad boundary                (EQR=0.2)
+#' Worst - the worst possible condition      (EQR=0.0)
+
+.eqr <- function(val, Ref, HG, GM, MP, PB, Worst){
+  
+  bnds <- c(Ref, HG, GM, MP, PB, Worst)
+  if(any(is.na(bnds))){
+    return(NA)
+  }
+  #class <- c("H","G","M","P","B")
+  dir <- ifelse(bnds[1] < bnds[6], 1, -1)
+  eqr <- c(1,0.8,0.6,0.4,0.2,0)
+  if(dir<1){
+    bnds <- rev(bnds) 
+    eqr <- rev(eqr)
+  }
+  n0 <- length(bnds[val>bnds])
+  n1 <- n0 + 1
+  n0 <- ifelse(n0<1, 1, n0)
+  n1 <- ifelse(n1>6, 6, n1)
+  eqr0 <- eqr[n0]
+  eqr1 <- eqr[n1]
+  eqr <- eqr0 + (eqr1 - eqr0) * (val - bnds[n0]) / (bnds[n1] - bnds[n0])
+  eqr <- ifelse(val<=bnds[1], eqr0, eqr)
+  eqr <- ifelse(val>bnds[6], eqr1, eqr)
+  #classId <- ifelse(dir>0, 6-n0, n0)
+  return(eqr)
+}
+
+# ------------ .classID() function -------------
+
+#' gives the status class (1, 2, 3, 4, 5) for
+#' a EQR value
+
+.classID <- function(eqr){
+  if(is.na(eqr)){
+    return(NA)
+  }else{
+    bnds <- c(0,0.2,0.4,0.6,0.8)
+    classID <- length(bnds[eqr>=bnds])
+    return(classID)  
+  }
+}
+
+.class_names <- function(lang="en"){
+  if(tolower(lang=="no")){
+    class_names <- c("Svært dårlig", "Dårlig", "Moderat","God","Svært god")
+  }else{
+    class_names <- c("Bad", "Poor", "Mod","Good", "High")
+  }
+  class_names <- factor(class_names, levels=class_names)
+  return(class_names)
+}
+
+eqr_results <- function(dfinds, dfbnds){
+  
+  keep_cols <- c("stn_code","index","n_total")
+  res_cols <- c("EQR","n_norm", "pctG", "pctR","ESG12","pctOpp","sumG","sumB","pctB")
+  
+  class_names <- .class_names("no")
+  
+  dfinds <- dfinds %>%
+    select(any_of(c(keep_cols, res_cols))) %>%
+    pivot_longer(any_of(res_cols), names_to = "calc", values_to = "value")
+  
+  dfinds <- dfinds %>%
+    left_join(dfbnds, by=c("index","calc"))
+  
+  dfinds$calc <- factor(dfinds$calc, levels = res_cols)
+  
+  dfinds <- dfinds %>%
+    filter(!is.na(eqr00))
+  
+  dfinds <- dfinds %>%
+    rowwise() %>%
+    mutate(EQR=.eqr(value, eqr10, eqr08, eqr06, eqr04, eqr02, eqr00)) %>%
+    mutate(classID = .classID(EQR)) %>%
+    mutate(Class = class_names[classID]) %>%
+    ungroup()
+  
+  dfinds <- dfinds %>%
+    mutate(x=ifelse(n_total<14, ifelse(calc %in% c("ESG12","pctR"), "x", ""), ""))
+  
+  return(dfinds)
+  
+}
+
+eqr_results_mean <- function(dfEQR){
+  
+  # 4. Hvis artsantallet er under 14 skal ikke EQR andel rødalger og ESG forhold benyttes i middelverdien.
+  
+  class_names <- .class_names("no")
+  
+  dfEQR <- dfEQR %>%
+    filter(x!="x") %>%
+    group_by(stn_code,index) %>%
+    summarise(EQR=mean(EQR,na.rm = T), .groups = "drop") 
+  
+  dfEQR <- dfEQR %>%
+    rowwise() %>%
+    mutate(classID = .classID(EQR)) %>%
+    mutate(Class = class_names[classID]) %>%
+    ungroup()
+  
+  return(dfEQR)
+}
+
+
+eqr_for_table <- function(dfEQR, dfstn){
+  
+  res_cols <- c("EQR","n_norm", "pctG", "pctR","ESG12","pctOpp","sumG","sumB","pctB")
+  class_names <- .class_names("no")
+  
+  dfstn$calc <- "EQR"
+  dfstn$calc <- factor(dfstn$calc,levels=res_cols) 
+  dfstn <- dfstn %>%
+    mutate(description=paste0("EQR samlet resultat ", stn_code))
+  
+ dfEQR <- dfEQR %>%
+    bind_rows(dfstn)
+ 
+  dfEQR <- dfEQR %>%
+    mutate(x=ifelse(is.na(x),"",x)) %>%
+    mutate(note=ifelse(x=="x", paste0("artsantallet < 14 (EQR=", round(EQR,3), ")"), "")) %>%
+    mutate(EQR=ifelse(x=="x",NA,EQR)) %>%
+    mutate(classID=ifelse(x=="x",NA, classID)) %>%
+    mutate(Class = class_names[classID]) 
+  
+ 
+  
+  dfEQR <- dfEQR %>%
+    select(index, stn_code, calc, description, value, eqr00, eqr02, eqr04, eqr06, eqr08, eqr10, EQR, classID, Class, note)
+  
+  dfEQR <- dfEQR %>%
+    mutate(istn= stringr::str_extract(stn_code, "[0-9]+") %>% as.numeric()) %>%
+    mutate(iix= stringr::str_extract(index, "[0-9]+") %>% as.numeric()) %>%
+    arrange(iix, istn, calc) %>%
+    select(-c(iix,istn))
+  
+  return(dfEQR)  
+  
+}
+
+
+excel_results <- function(dfi, dfobs, dfeqr){
   wb <- createWorkbook()
   
   hs1 <- createStyle(textDecoration = "Bold")
@@ -8,6 +168,32 @@ excel_results <- function(dfi, dfobs){
   style_nr3 <- createStyle(numFmt = "0.000")
   
   
+  # -----------------------------------------
+  id <- "EQR"
+  addWorksheet(wb, id)
+  
+  dfeqr <- dfeqr %>%
+    select(-classID)
+  
+  writeData(wb, id, dfeqr, headerStyle = hs1)
+  
+  nr <- 1 + nrow(dfeqr)
+  
+  colnames <- c("EQR")
+  for(icol in colnames){
+    i <- which(tolower(names(dfeqr))==tolower(icol))
+    openxlsx::addStyle(wb, id, style_nr3, cols = i, rows=(2:nr))
+  }
+  colnames <- c("value","eqr00","eqr02","eqr04","eqr06","eqr08","eqr10")
+  for(icol in colnames){
+    i <- which(tolower(names(dfeqr))==tolower(icol))
+    openxlsx::addStyle(wb, id, style_nr1, cols = i, rows=(2:nr))
+  }
+  
+  openxlsx::setColWidths(wb, id, cols = 1:ncol(dfobs), widths = "auto")
+  freezePane(wb, id, firstRow = TRUE)
+  
+  # -----------------------------------------
   id <- "Indices"
   addWorksheet(wb, id)
   
@@ -20,16 +206,20 @@ excel_results <- function(dfi, dfobs){
     i <- which(tolower(names(dfi))==tolower(icol))
     openxlsx::addStyle(wb, id, style_nr3, cols = i, rows=(2:nr))
   }
-  colnames <- c("pctG", "pctR","n_norm","pctOpp","sumB", "sumG")
+  colnames <- c("pctG", "pctR","pctB","n_norm","pctOpp","sumB", "sumG")
   for(icol in colnames){
     i <- which(tolower(names(dfi))==tolower(icol))
     openxlsx::addStyle(wb, id, style_nr1, cols = i, rows=(2:nr))
   }
   
-  openxlsx::setColWidths(wb, id, cols = 1:ncol(dfi), widths = "auto")
+  # openxlsx::setColWidths(wb, id, cols = 1:ncol(dfi), widths = "auto")
+  # 
+  i <- which(tolower(names(dfi))==tolower("f"))
+  openxlsx::setColWidths(wb, id, cols = i, widths = 6)
   
   freezePane(wb, id, firstRow = TRUE)
 
+  # -----------------------------------------
   id <- "Observations"
   addWorksheet(wb, id)
   
@@ -38,10 +228,14 @@ excel_results <- function(dfi, dfobs){
   
   writeData(wb, id, dfobs, headerStyle = hs1)
   openxlsx::setColWidths(wb, id, cols = 1:ncol(dfobs), widths = "auto")
+  
+  
   freezePane(wb, id, firstRow = TRUE)
   
   return(wb)
 }
+
+
 
 obs_indices <- function(df, dfstns){
   
@@ -124,13 +318,14 @@ obs_indices <- function(df, dfstns){
     left_join(dfnOpport, by=c("stn_code","index")) %>%
     mutate(pctG = 100*nG/n_total) %>%                   # %grønn/tot
     mutate(pctR = 100*nR/n_total) %>%                   # %rød/tot
+    mutate(pctB = 100*nB/n_total) %>%                   # %rød/tot
     mutate(n_norm = f * n_total) %>%                    # Normalisert rikhet (ant arter)
     mutate(ESG12 = nESG1/nESG2) %>%                     # ESG1/ESG2
     mutate(pctOpp = 100*n_opp/n_total) %>%              # %opp/tot
     left_join(dfsumBG, by=c("stn_code","index"))        # Sum forekomst brun
                                                         # Sum forekomst grønn
   
-  cols_rnd <- c("pctG", "pctR", "n_norm", "ESG12", "pctOpp", "sumB", "sumG")
+  cols_rnd <- c("pctG", "pctR", "pctB","n_norm", "ESG12", "pctOpp", "sumB", "sumG")
   
   # dfres <- dfres %>%
   #   mutate(across(all_of(cols_rnd),  \(x) round(x, digits=1)))

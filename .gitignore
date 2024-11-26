@@ -50,3 +50,8 @@ rsconnect/
 
 # information used in development
 notes/
+
+# test data
+*.xlsx
+*.xls
+*.xlsm
