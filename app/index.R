@@ -11,8 +11,11 @@ source("app/functions.R")
 options <- get_options("app/options.R")
 
 xlfile <- "notes/20241111 Macroalgae Index/examples/test2.xlsx"
-xlfile <- "notes/20241111 Macroalgae Index/examples/test_2stns.xlsx"
+# xlfile <- "notes/20241111 Macroalgae Index/examples/test_2stns.xlsx"
 
+
+# status class boundaries
+dfbnds <- read.table("app/class_boundaries.txt", sep=";", header=T)
 
 # read types for station codes
 dftype <- read.table("app/stn_index_type.txt", sep=";", header=T)
@@ -44,8 +47,26 @@ dfobs <- species_data(df, dfstns, options)
 df <- match_obs_species_lists(dfstns, dfobs, dfgrps, dftype)
 
 
-res <- obs_indices(df, dfstns)
+dfind <- obs_indices(df, dfstns)
 
+dfeqr1 <- eqr_results(dfind, dfbnds)
 
+dfeqr <- eqr_results_mean(dfeqr1)
 
+dfeqr_tab <- eqr_for_table(dfeqr1, dfeqr)
+
+# status class boundaries
+df0 <- read.table("app/expected.txt", sep=";", header=T) %>%
+  rename(stn_code=stn, value0=value, EQR0=EQR)
+
+df1 <- dfeqr1 %>%
+  select(stn_code, index, calc, value, EQR) %>%
+  bind_rows(dfeqr %>% select(stn_code, index, EQR) %>% mutate(calc="EQR"))
+
+df0 <- df0 %>%
+  left_join(df1, by=c("stn_code","calc"))
+  
+
+df0err <- df0 %>%
+  filter(abs(EQR0-EQR) > 0.001)
 

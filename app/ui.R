@@ -53,13 +53,9 @@ page_navbar(
                         title = "Index calculations",
                         icon = bsicons::bs_icon("file-earmark-spreadsheet"),  # bar-chart
                         layout_columns(
-                          reactableOutput("tbl_indices"),
-                          downloadButton("btnDownloadInds" ,
-                                         label=HTML("&nbsp;Download"),
-                                         title=HTML("Download indicators"),
-                                         icon=icon("download"),
-                                         style="padding: 6px 15px 7px 15px;margin: 10px 0px 8px 0px;"),
-                          col_widths = c(11,1))
+                          reactableOutput("tbl_indices"),p(""),
+                          col_widths = c(11,1)),
+                        uiOutput("comment_indices")
                         ),
                       accordion_panel( 
                         title = "Matched observations",
@@ -74,15 +70,16 @@ page_navbar(
                       open = TRUE,
                       accordion_panel(
                         title = "EQR Results",
-                        icon = bsicons::bs_icon("bar-chart-steps"),  # bar-chart
-                        p(""),p(""),
-                        col_widths = c(11,1)),
-                      accordion_panel( 
-                        title = "EQR calculations",
-                        icon = bsicons::bs_icon("list-ol"),  # bar-chart
-                        layout_columns(
-                          p(""),p(""),
-                          col_widths = c(11,1))))
+                        icon = bsicons::bs_icon("bar-chart"),  # bar-chart
+                        
+                        layout_columns(reactableOutput("tbl_eqr"), 
+                                       downloadButton("btnDownloadInds" ,
+                                                      label=HTML("&nbsp;Download"),
+                                                      title=HTML("Download results"),
+                                                      icon=icon("download"),
+                                                      style="padding: 6px 15px 7px 15px;margin: 10px 0px 8px 0px;"),
+                                       col_widths = c(8,1))))
+         
   ), 
   nav_panel(title="Information", 
             icon = bsicons::bs_icon("info-square"),
