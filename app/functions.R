@@ -1,4 +1,185 @@
 
+excel_results <- function(dfi, dfobs){
+  wb <- createWorkbook()
+  
+  hs1 <- createStyle(textDecoration = "Bold")
+  
+  style_nr1 <- createStyle(numFmt = "0.0")
+  style_nr3 <- createStyle(numFmt = "0.000")
+  
+  
+  id <- "Indices"
+  addWorksheet(wb, id)
+  
+  writeData(wb, id, dfi, headerStyle = hs1)
+
+  nr <- 1 + nrow(dfi)
+  
+  colnames <- c("f","ESG12")
+  for(icol in colnames){
+    i <- which(tolower(names(dfi))==tolower(icol))
+    openxlsx::addStyle(wb, id, style_nr3, cols = i, rows=(2:nr))
+  }
+  colnames <- c("pctG", "pctR","n_norm","pctOpp","sumB", "sumG")
+  for(icol in colnames){
+    i <- which(tolower(names(dfi))==tolower(icol))
+    openxlsx::addStyle(wb, id, style_nr1, cols = i, rows=(2:nr))
+  }
+  
+  openxlsx::setColWidths(wb, id, cols = 1:ncol(dfi), widths = "auto")
+  
+  freezePane(wb, id, firstRow = TRUE)
+
+  id <- "Observations"
+  addWorksheet(wb, id)
+  
+  dfobs <- dfobs %>%
+    filter(!is.na(value))
+  
+  writeData(wb, id, dfobs, headerStyle = hs1)
+  openxlsx::setColWidths(wb, id, cols = 1:ncol(dfobs), widths = "auto")
+  freezePane(wb, id, firstRow = TRUE)
+  
+  return(wb)
+}
+
+obs_indices <- function(df, dfstns){
+  
+  df <- df %>%
+    mutate(Group =stringr::str_sub(Group,1,1)) %>%
+    filter(!is.na(value))
+  
+  # Antall rød, grønn, brun
+  
+  dfnBGR <- df %>%
+    distinct(stn_code, index, Group, taxaID) %>%
+    group_by(stn_code, index, Group) %>%
+    summarise(n = n(), .groups="drop")
+  
+  dfnBGR <- dfnBGR %>%
+    pivot_wider(names_from = "Group", values_from = "n", 
+                names_prefix="n", names_sort = T)
+  
+  # Sum antall arter
+  
+  dfnTotal <- df %>%
+    distinct(stn_code, index, taxaID) %>%
+    group_by(stn_code, index) %>%
+    summarise(n_total = n(), .groups="drop")
+  
+  # Antall ESG1, ESG2
+  
+  dfnESG <- df %>%
+    filter(!is.na(ESG)) %>%
+    distinct(stn_code, index, ESG, taxaID) %>%
+    group_by(stn_code, index, ESG) %>%
+    summarise(n = n(), .groups="drop")
+  
+  dfnESG <- df %>%
+    distinct(stn_code, index) %>%
+    merge(df %>% distinct(ESG), all=T) %>%
+    left_join(dfnESG, by=c("stn_code","index","ESG"))
+  
+  dfnESG <- dfnESG %>%
+    pivot_wider(names_from = "ESG", values_from = "n",
+                names_prefix="nESG", names_sort = T)
+  
+  # Antall opportunist
+  
+  dfnOpport <- df %>%
+    filter(!is.na(Opport.)) %>%
+    distinct(stn_code, index, taxaID) %>%
+    group_by(stn_code, index) %>%
+    summarise(n_opp = n(), .groups="drop")
+  
+  dfnOpport <- df %>%
+    distinct(stn_code, index) %>%
+    left_join(dfnOpport, by=c("stn_code","index")) %>%
+    mutate(n_opp = ifelse(is.na(n_opp), 0, n_opp ))
+  
+  # Sum forekomst brun, grønn
+  
+  dfsumBG <- df %>%
+    filter(Group %in% c("B","G")) %>%
+    group_by(stn_code, index, Group, taxaID) %>%
+    summarise(max_val = max(value, na.rm=T), .groups="drop") 
+  
+  dfsumBG <- dfsumBG %>%
+    mutate(value_exp = value_rescale(max_val))
+  
+  dfsumBG <- dfsumBG %>% 
+    group_by(stn_code, index, Group) %>%
+    summarise(sum=sum(value_exp,na.rm=T), .groups="drop")
+  
+  dfsumBG <- dfsumBG %>%
+    pivot_wider(names_from = "Group", values_from = "sum", 
+                names_prefix="sum", names_sort = T)
+  
+  dfres <- dfstns %>%
+    select(stn_code, points, f) %>%
+    left_join(dfnTotal, by=c("stn_code")) %>%
+    relocate(index, .after=1) %>%
+    left_join(dfnBGR, by=c("stn_code","index")) %>%
+    left_join(dfnESG, by=c("stn_code","index")) %>%
+    left_join(dfnOpport, by=c("stn_code","index")) %>%
+    mutate(pctG = 100*nG/n_total) %>%                   # %grønn/tot
+    mutate(pctR = 100*nR/n_total) %>%                   # %rød/tot
+    mutate(n_norm = f * n_total) %>%                    # Normalisert rikhet (ant arter)
+    mutate(ESG12 = nESG1/nESG2) %>%                     # ESG1/ESG2
+    mutate(pctOpp = 100*n_opp/n_total) %>%              # %opp/tot
+    left_join(dfsumBG, by=c("stn_code","index"))        # Sum forekomst brun
+                                                        # Sum forekomst grønn
+  
+  cols_rnd <- c("pctG", "pctR", "n_norm", "ESG12", "pctOpp", "sumB", "sumG")
+  
+  # dfres <- dfres %>%
+  #   mutate(across(all_of(cols_rnd),  \(x) round(x, digits=1)))
+    
+  dfres <- dfres %>%
+    mutate(istn= stringr::str_extract(stn_code, "[0-9]+") %>% as.numeric()) %>%
+    mutate(iix= stringr::str_extract(index, "[0-9]+") %>% as.numeric()) %>%
+    arrange(iix, istn) %>%
+    select(-c(iix,istn))
+  
+  return(dfres)
+}
+
+
+
+# -------------- fjaerepotensial() -------------------------
+
+fjaerepotensial <- function(poeng){
+  # Felt- og beregningsmetodikk for komboindeksen (Makroalger) 28.11.2017
+  poeng_sum <- 5:20
+  f <- c(1.72, 1.65, 1.58, 1.51, 1.44, 1.36,
+         1.29, 1.21, 1.14, 1.07, 1, 0.93,
+         0.87, 0.8, 0.74, 0.69)
+  ix <- length(poeng_sum[poeng_sum <= round(poeng,0)])
+  ix <- max(ix,1)
+  return(f[ix])
+}
+
+.value_rescale_single <- function(value){
+  # rescale from 1-6 scale to exp(1-4)
+  
+  value <- ifelse(value<1, NA, value)
+  value <- ifelse(value>=7, NA, value)
+  if(is.na(value)){
+    return(NA)
+  }else{
+    value = floor(value)
+    values_14 <- c(1, 2, 2, 3, 3, 4)
+    value <- values_14[value]
+    value <- exp(value)
+    return(value)
+  }
+}
+
+value_rescale <- function(values){
+ res <- lapply(values, .value_rescale_single) %>%
+   unlist()
+ return(res)
+}
 
 # ------------ species_interpreter() -------------------
 
@@ -10,19 +191,88 @@
   c("spp\\.", "ssp\\.", "sp\\.")
 }
 
-.species_split <- function(species_definition){
+.incl_chars <-  function(){
+  #' used when a group combines a genus and individual species
+  #' e.g. Phyllophora spp. inkl. Coccotylus truncatus
+  c("inkl\\.","ink\\.","incl\\.","inc\\." )
+}
+
+
+.add_spp <- function(s){
+  # if not a species, add "spp." to the name
+  if(!.is_species_single(s)){
+    s <- paste0(stringr::str_trim(s)," spp.")
+  }
+  return(s)
+}
+
+
+split_taxa <- function(taxa_definition, return_list=F, sep_char=";", remove_comment=T){
+
+  taxa_split <- lapply(taxa_definition, .split_taxa_single, 
+                       return_list=return_list, sep_char=sep_char,
+                       remove_comment=remove_comment)
+  if(return_list==F){
+    taxa_split <- unlist(taxa_split)
+  }
+  return(taxa_split)
+}
+
+
+.split_taxa_single <- function(taxa_definition, return_list=F, sep_char=";", remove_comment=T){
+
+  # by default return a semi-colon separated list as a single character variable
+  # if return_list == T then function returns a vector of separate taxa
+  
+  s <- taxa_definition
+
+  if(is.na(s)){
+    return(NA_character_)
+  }
+  
+  CORAX <- c("Calcareous encrusters (CORAX)",
+             "Rød skorpeformet kalkalge")
+  
+  if(stringr::str_to_lower(s) %in% stringr::str_to_lower(CORAX)){
+    return("CORAX")
+  }
+  
+  if(remove_comment){
+    # remove anything within "(......)" 
+    s <- stringr::str_remove_all(s, "\\([:print:]+\\)")
+  }
   
   genus_level <- lapply(.genus_chars(), stringr::str_detect, string=s) %>%
     unlist() %>%
     max(na.rm=T)
   
-  s <- stringr::str_split_1(species_definition, "/")
+  ix <- lapply(.incl_chars(), stringr::str_detect, string=s) %>%
+    unlist()
+  s_incl <- .incl_chars()[ix]
+  
+  #' there shouldn't been more than one version of "incl" text in a 
+  #' group definition but who knows...
+  #' 
+  for(s_match in s_incl){
+    s <- lapply(s, stringr::str_split_1, s_match) %>%
+      unlist()
+  }
+
+  s <- lapply(s, stringr::str_split_1, "/") %>%
+    unlist()
+  
+  # s <- stringr::str_split_1(taxa_definition, "/")
   s <- stringr::str_remove_all(s, "spp\\.")
   s <- stringr::str_remove_all(s, "ssp\\.")
   s <- stringr::str_remove_all(s, "sp\\.")
   s <- stringr::str_trim(s)
   if(genus_level){
-    s <- paste0(s, " spp.")
+    s <- s %>%
+      lapply(.add_spp) %>% 
+      unlist()
+  }
+  if(!return_list){
+    s <- paste0(s, collapse=sep_char)
   }
   return(s)
 }
@@ -44,9 +294,145 @@
 }
 
 is_species <- function(name){
-  is_species <- lapply(name, is_species_single) %>% 
+  is_species <- lapply(name, .is_species_single) %>% 
     unlist()
   return(is_species)
+}
+
+.get_genus_single <- function(name){
+  
+  
+  if(is.na(name)){
+    return(NA_character_)
+  }else{
+    
+  for(s in .genus_chars()){
+    name <- name %>%
+      stringr::str_remove_all(s) %>%
+      stringr::str_trim()
+  }
+  if(is_species(name)){
+    name <- stringr::str_split_i(name," ", 1)
+  }else{
+    # already genus
+  }
+  return(name)
+  }
+}
+
+
+get_genus <- function(name){
+  genus <- lapply(name, .get_genus_single) %>% 
+    unlist()
+  return(genus)
+}
+
+# ------------------------------------------------------
+# matching species to species lists or groups of species / genus
+
+.match_genus <- function(dfs, dfg){
+  
+  dfg <- dfg %>%
+    mutate(genus=get_genus(taxa_split)) %>%
+    # don't match if the genus table contains species
+    mutate(genus=ifelse(is_species == T, NA_character_, genus)) 
+  
+  dfg <- dfg  %>%
+    select(genus, taxaIDgenus=taxaID, index)
+  dfg <- dfg %>%
+    filter(!is.na(genus))
+  
+  dfs <- dfs %>%
+    mutate(genus = split_taxa(Navn))
+  dfs <- dfs %>% 
+    mutate(genus=get_genus(genus))
+  
+  dfs <- dfs %>%
+    left_join(dfg, by=c("genus","index"),
+              relationship = "many-to-many")
+  return(dfs)
+}
+
+.match_species <- function(dfs1, dfs2){
+  
+  dfs2 <- dfs2  %>%
+    select(taxa_split, taxaID, index) %>%
+    filter(!is.na(taxa_split))
+  dfs1 <- dfs1 %>%
+    mutate(taxa_split = split_taxa(Navn)) %>%
+    left_join(dfs2, by=c("taxa_split", "index"))
+  
+  return(dfs1)  
+}
+
+.call_progress<- function(progress=NULL, val=1){
+  if(!is.null(progress)){
+    progress$set(value = val)
+  }
+}
+
+
+match_obs_species_lists <- function(dfstns, dfobs, dfgrps, dftype, progress=NULL){
+  
+  .call_progress(progress, 2)
+
+  dfobs <- dfobs %>%
+    pivot_longer(cols=all_of(dfstns$stn_code), names_to = "stn_code", values_to = "value")
+  
+  dfobs <- dfobs %>%
+    left_join(dftype, by=c("stn_code"="stn"))
+  
+  dfgrps <- dfgrps  %>%
+    pivot_longer(cols=c(RSLA1,RSLA2,RSLA3,RSL4), names_to="index", values_to="Used") %>%
+    filter(Used==TRUE)
+  
+  dfgrps0 <- dfgrps
+  
+  dfgrps <- dfgrps  %>%
+    mutate(taxa_split = split_taxa(TAXA)) 
+  
+  dfgrps <- dfgrps  %>%
+    separate_longer_delim(taxa_split, delim=";")
+  
+  dfgrps <- dfgrps  %>%
+    mutate(is_species=is_species(taxa_split))
+  
+  .call_progress(progress, 3)
+  df <- .match_species(dfobs, dfgrps)
+  
+  .call_progress(progress, 5)
+  df <- .match_genus(df, dfgrps)
+  
+  df <- df %>%
+    mutate(taxaID = ifelse(is.na(taxaID), taxaIDgenus, taxaID)) %>%
+    select(-taxaIDgenus)
+  .call_progress(progress, 7)
+  
+  df <- df%>% 
+    filter(!is.na(taxaID))
+  
+  df <- df %>% 
+    left_join(dfgrps0, by=c("taxaID","index"),
+              relationship = "many-to-many")
+  # df <- dfgrps0 %>% 
+  #   left_join(df, by=c("taxaID","index"),
+  #             relationship = "many-to-many")
+  
+  df <- df %>%
+    select(stn_code, index, Group, taxaID, Opport., ESG, TAXA, Kode, CF, SP, NB, Navn, value)
+           #  taxa_split,  genus,   )
+  df <- df %>%
+    filter(!is.na(stn_code))
+  
+  
+  df <- df %>%
+    mutate(istn= stringr::str_extract(stn_code, "[0-9]+") %>% as.numeric()) %>%
+    mutate(iix= stringr::str_extract(index, "[0-9]+") %>% as.numeric()) %>%
+    arrange(iix, istn,taxaID) %>%
+    select(-c(iix,istn))
+  
+  
+  return(df)
 }
 
 
@@ -96,6 +482,9 @@ species_data <- function(df, dfstns, options){
     row_head <- df[row_match,] %>% 
       unlist()
     
+    df <- df %>%
+      mutate(rowid=row_number()) 
+    
     df <- df[(row_match+1):nrow(df),1:col_max]
     
     col_names <- row_head[1:(col_stn_first-1)]
@@ -114,18 +503,7 @@ species_data <- function(df, dfstns, options){
 }
 
 
-# -------------- fjaerepotensial() -------------------------
 
-fjaerepotensial <- function(poeng){
-  # Felt- og beregningsmetodikk for komboindeksen (Makroalger) 28.11.2017
-  poeng_sum <- 5:20
-  f <- c(1.72, 1.65, 1.58, 1.51, 1.44, 1.36,
-         1.29, 1.21, 1.14, 1.07, 1, 0.93,
-         0.87, 0.8, 0.74, 0.69)
-  ix <- length(poeng_sum[poeng_sum <= round(poeng,0)])
-  ix <- max(ix,1)
-  return(f[ix])
-}
 
 # -------------- add_param_names() -------------------------
 
@@ -200,7 +578,7 @@ fjaerepotensial <- function(poeng){
 
 observation_info <- function(df, options, 
                              opts=c("species_header","points_adjust")){
-
+ 
   df_stns <- data.frame()
   grps <- names(options)[!names(options) %in% opts]
   for(grpi in grps){
@@ -278,14 +656,7 @@ observation_info <- function(df, options,
     }
     }
   }
-  
-  
-  # if("points" %in% names(sub_options[[1]])){
-  #   col_name <- paste0("sum_", info_group)
-  #   dfobs <-dfobs %>%
-  #     mutate(!!col_name := rowSums(across(2:ncol(dfobs)), na.rm=T )) %>%
-  #     relocate(!!col_name, .after=1)
-  # }
+
   return(dfobs)
 }
 
@@ -313,7 +684,7 @@ observation_info <- function(df, options,
   
   res  <- df[row_ix,first_col:ncol(df)] %>%
     pivot_longer(cols=everything(), names_to = "col", values_to = "value") %>%
-    mutate(col=stringr::str_remove_all(col, "\\.")) %>%
+    mutate(col=stringr::str_extract(col, "[\\d]+")) %>% 
     mutate(col=as.numeric(col))
   
   res <- res %>%
@@ -343,10 +714,19 @@ observation_info <- function(df, options,
 
 # -------------- read_excel_sheet() -------------------
 
+.repair_nms <- function(nms){
+  nms <- 1:length(nms)
+  nms <- paste0("_", nms)
+  return(nms)
+}
 
 read_excel_sheet <- function(sheet, xl_path){
   require(readxl)
-  df <- readxl::read_excel(sheet=sheet, path=xl_path, col_names=F, col_types = "text")
+  df <- readxl::read_excel(sheet=sheet, path=xl_path, 
+                           col_names=F, col_types = "text",
+                           #.name_repair = "unique")
+                           .name_repair = .repair_nms)
+  
   return(df)
 }
 
