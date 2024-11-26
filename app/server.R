@@ -5,6 +5,7 @@ library(tidyr)
 library(purrr)
 library(reactable)
 library(htmltools)
+library(openxlsx)
 
 source("functions.R")
 
