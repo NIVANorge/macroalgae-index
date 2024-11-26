@@ -33,20 +33,57 @@ page_navbar(
                       accordion_panel(
                         title = "Observations",
                         icon = bsicons::bs_icon("file-earmark-spreadsheet"),  # bar-chart
-                        reactableOutput("observations")
-                      ),  
-                      accordion_panel(
-                        title = "Options", 
-                        icon = bsicons::bs_icon("check2-square"), # calendar-date
-                        "Options"  
-                      ),  
+                        layout_columns(
+                          reactableOutput("observations"),p(""),
+                          col_widths = c(11,1))
+                      )#,  
+                      #accordion_panel(
+                      #  title = "Options", 
+                      #  icon = bsicons::bs_icon("check2-square"), # calendar-date
+                      #  "Options"  
+                      #),  
                       
             )
             ),
-  nav_panel(title="Results", 
+  nav_panel(title="Indices", 
             icon = bsicons::bs_icon("calculator"),
-            "Results"
+            accordion(id="calculations",
+                      open = TRUE,
+                      accordion_panel(
+                        title = "Index calculations",
+                        icon = bsicons::bs_icon("file-earmark-spreadsheet"),  # bar-chart
+                        layout_columns(
+                          reactableOutput("tbl_indices"),
+                          downloadButton("btnDownloadInds" ,
+                                         label=HTML("&nbsp;Download"),
+                                         title=HTML("Download indicators"),
+                                         icon=icon("download"),
+                                         style="padding: 6px 15px 7px 15px;margin: 10px 0px 8px 0px;"),
+                          col_widths = c(11,1))
+                        ),
+                      accordion_panel( 
+                        title = "Matched observations",
+                        icon = bsicons::bs_icon("file-earmark-spreadsheet"),  # bar-chart
+                        layout_columns(
+                          reactableOutput("matched_obs"),p(""),
+                          col_widths = c(11,1))))
             ), 
+  nav_panel(title="EQR Results", 
+            icon = bsicons::bs_icon("bar-chart"),
+            accordion(id="eqr_results",
+                      open = TRUE,
+                      accordion_panel(
+                        title = "EQR Results",
+                        icon = bsicons::bs_icon("bar-chart-steps"),  # bar-chart
+                        p(""),p(""),
+                        col_widths = c(11,1)),
+                      accordion_panel( 
+                        title = "EQR calculations",
+                        icon = bsicons::bs_icon("list-ol"),  # bar-chart
+                        layout_columns(
+                          p(""),p(""),
+                          col_widths = c(11,1))))
+  ), 
   nav_panel(title="Information", 
             icon = bsicons::bs_icon("info-square"),
             "Information"

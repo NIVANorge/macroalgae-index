@@ -6,10 +6,25 @@ library(purrr)
 library(reactable)
 library(htmltools)
 
-source("options.R")
 source("functions.R")
 
+# read types for station codes
+dftype <- read.table("stn_index_type.txt", sep=";", header=T)
+
+# read species lists for matching with observations
+dfgrps  <- read.table("species_lists.txt", sep=";", header=T)
+
+dfgrps <- dfgrps  %>%
+  mutate(taxaID=row_number()) %>%
+  relocate(taxaID, .before=1) %>%
+  mutate(RSLA2=RSLA.1.2) %>%
+  rename(RSLA1=RSLA.1.2, RSLA3 = RSLA.3, RSL4=RSL.4) %>% 
+  relocate(RSLA2, .after=RSLA1)
+
+
 function(input, output, session) {
+  
+  options <- get_options()
   
   xl_sheets <- reactive({
     file <- input$file1
@@ -208,33 +223,16 @@ function(input, output, session) {
     }    
   })
   
+  
   stn_points <- reactive({
     req(stations_ok())
     req(stations())
     selected <- getReactableState("stations", "selected")
-    
-    if(is.null(selected)){
-      return(NULL)
-    }else{
 
-      df <- stations()
-      df <- df[selected,] 
-      df <- df %>%
-        select(turbid_water, sand_scouring, ice_scouring, 
-               ravine, fractured, boulders, 
-               steep, unspec_hard, rocks, shingle, 
-               shallow_pool, large_pool, deep_pool, 
-               small_pool, cave, overhang,
-               other_sub, 
-               points_adjust)
-      df <- df %>%
-        pivot_longer(cols=1:ncol(df), names_to = "Parameter", values_to="Points")
-      
-      df <- df %>%
-        add_param_names(options)
-      return(df)
-    }
+    df <- station_points( stations(), selected, options)
+  
   })
+  
   
   output$points_table <- renderReactable({
     req(stations_ok())
@@ -276,42 +274,15 @@ function(input, output, session) {
     paste0("selected: ", input$stations_rows_selected)
   })
   
+  
   obs_data <- reactive({
     
     req(stations_ok())
     req(stations())
-
+    
+    df <- species_data(xl_data(), stations(), options)
   
-    dfstns <- stations()
-    df <- xl_data()
-    
-    if(!is.null(df)){
-      
-    col1 <- df[,1] %>% 
-      unlist()
-    
-    col_stn_first <- min(dfstns$col)
-    col_max <- max(dfstns$col)
-    
-    
-    row_match <- match(options$species_header, col1)
-    row_head <- df[row_match,] %>% 
-      unlist()
-    df <- df[(row_match+1):nrow(df),1:col_max]
-    
-    col_names <- row_head[1:(col_stn_first-1)]
-    col_names <- c(col_names, dfstns$stn_code)
-    
-    names(df) <- col_names
-    
-    df <- df %>%
-      mutate(across(all_of(dfstns$stn_code), as.numeric))
-    
     return(df)
-    }else{
-      return(NULL)
-    }
-    
   })
   
   output$observations <-renderReactable({
@@ -338,7 +309,7 @@ function(input, output, session) {
                 defaultColDef = colDef(minWidth = 55, show=T, vAlign = "bottom"),
                 compact = TRUE,
                 wrap = FALSE,
-                fullWidth = FALSE,
+                fullWidth = T,
                 resizable = TRUE,
                 bordered = TRUE,
                 defaultPageSize = 999,
@@ -349,5 +320,191 @@ function(input, output, session) {
                 ))
     }
   })
+  
+  output$btnDownloadInds <- downloadHandler(
+    
+    filename = function() {
+      paste0("download ",format.Date(Sys.time(), 
+                                     "%Y%m%d_%H%M%S"), ".xlsx")
+      
+      
+      
+    },
+    content = function(file) {
+      
+      progress <- Progress$new(session, min=1, max=10)
+      on.exit(progress$close())
+      
+      progress$set(message = 'Preparing download',
+                   detail = "please wait...")
+
+      wb<- excel_results(df_indices(),
+                          matched_obs())
+      
+      saveWorkbook(wb, file = file, overwrite = TRUE)
+      
+    }
+  )
+  
+  
+  matched_obs <- reactive({
+    req(stations_ok())
+    #req(stations())
+    #req(obs_data())
+    
+    progress <- Progress$new(session, min=1, max=10)
+    on.exit(progress$close())
+    
+    progress$set(message = 'Matching species',
+                 detail = "please wait...")
+    # match observations with species lists
+    df <- match_obs_species_lists(stations(), obs_data(), dfgrps, dftype, progress)
+    return(df)
+  })
+  
+  matched_obs_stn_select <- reactive({
+    req(stations_ok())
+    req(matched_obs())
+    req(df_indices())
+    
+    df <- matched_obs()
+    
+    selected <- getReactableState("tbl_indices", "selected")
+    
+    if(is.null(selected)){
+      return(NULL)
+    }else{
+      stn_select <- df_indices()$stn_code
+      stn_select <- stn_select[selected]
+      df <- df %>%
+        filter(stn_code == stn_select) %>%
+        filter(!is.na(value))
+      return(df)
+    }
+  })
+  
+  
+  obs_counts <- reactive({
+    
+    df <- obs_counts(matched_obs())
+    
+  })
+  
+  output$matched_obs <-renderReactable({
+    
+    req(stations_ok())
+    #req(stations())
+    #req(obs_data())
+    #req(matched_obs())
+    
+    df <- matched_obs_stn_select()
+    
+    if(is.null(df)){
+      return(NULL)
+    }else{
+      reactable(df,
+                filterable = TRUE, minRows = 10,
+                sortable = T,
+                style = list(fontSize = "0.8rem"),
+                #width = 1100,
+                columns = list(
+                  stn_code = colDef(name=options$station$stn_name$row_name, width=60),
+                  index = colDef(name="Index", width=60),
+                  Group = colDef(name="Gruppe", width=60),
+                  taxaID = colDef(name="TaxaID", show = F),
+                  Opport. = colDef(width=60),
+                  ESG = colDef(width=60),
+                  TAXA = colDef(name="Taxa liste", width=250),
+                  Kode = colDef(width=70),
+                  CF = colDef(width=30),
+                  SP = colDef(width=30),
+                  NB = colDef(width=30),
+                  Navn = colDef(width=200),
+                  value = colDef(name="1-6", width=40)
+                ), # columns
+                defaultColDef = colDef(minWidth = 15, show=T, vAlign = "bottom"),
+                compact = TRUE,
+                wrap = FALSE,
+                fullWidth = FALSE,
+                resizable = TRUE,
+                bordered = TRUE,
+                defaultPageSize = 20,
+                highlight = TRUE,
+                showPageSizeOptions = TRUE,
+                pageSizeOptions = c(10, 20, 50),
+                theme = reactableTheme(
+                  headerStyle = list(background = "#f7f7f8"),
+                  cellPadding = "1px 1px"
+                ))
+    }
+  })
+  
+  
+  df_indices <- reactive({
+    
+    req(stations_ok())
+    
+    df <- obs_indices(matched_obs(), stations())
+    
+    return(df)
+  })
+  
+  output$tbl_indices <-renderReactable({
+    
+    req(stations_ok())
+    #req(stations())
+    #req(obs_data())
+    #req(matched_obs())
+    
+    df <- df_indices()
+    
+    if(is.null(df)){
+      return(NULL)
+    }else{
+      df <- df %>%
+        relocate(nG, .before="nB")
+      
+      reactable(df,
+                selection = "single", 
+                onClick = "select",
+                sortable = F,
+                style = list(fontSize = "0.8rem"),
+                #width = 1100,
+                columns = list(
+                  stn_code = colDef(name=options$station$stn_name$row_name, width=60),
+                  index = colDef(name="Index", width=55),
+                  points = colDef(name="Poeng", width=55),
+                  f = colDef(name="f", width=65, format = colFormat(digits = 2)),
+                  n_total = colDef(name="N", width=50),
+                  nG = colDef(name="Grøn", width=50),
+                  nB = colDef(name="Brun", width=50),
+                  nR = colDef(name="Rød", width=50),
+                  nESG1 = colDef(name="ESG1", width=50),
+                  nESG2 = colDef(name="ESG2", width=50),
+                  n_opp = colDef(name="Opp.", width=50),
+                  pctG= colDef(name="%Gr", width=55, format = colFormat(digits = 1)),
+                  pctR= colDef(name="%Rd", width=55, format = colFormat(digits = 1)),
+                  n_norm = colDef(name="f.N", width=55, format = colFormat(digits = 1)),
+                  ESG12 = colDef(name="ESG 1:2", width=65, format = colFormat(digits = 3)),
+                  pctOpp= colDef(name="%opp", width=55, format = colFormat(digits = 1)),
+                  sumB = colDef(name="sum B", width=55, format = colFormat(digits = 1)),
+                  sumG = colDef(name="sum G", width=55, format = colFormat(digits = 1))
+                  
+                ), # columns
+                defaultColDef = colDef(minWidth = 55, show=T, vAlign = "bottom"),
+                compact = TRUE,
+                wrap = FALSE,
+                fullWidth = FALSE,
+                resizable = TRUE,
+                bordered = TRUE,
+                defaultPageSize = 20,
+                highlight = TRUE,
+                theme = reactableTheme(
+                  headerStyle = list(background = "#f7f7f8"),
+                  cellPadding = "1px 1px"
+                ))
+    }
+  })
+  
 
 }
